@@ -1,0 +1,1 @@
+ATTR{idVendor}=="0403", ACTION=="add", MODE:="666"
