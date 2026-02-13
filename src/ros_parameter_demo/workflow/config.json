@@ -1,0 +1,66 @@
+{
+  "multipleTabs": true,
+  "whitelist": true,
+  "hideReadOnlyParameters": true,
+  "whitelistNodes": [
+    "ascan_processor",
+    "ascan_publisher"
+  ],
+  "whitelistParameters": {
+    "ascan_processor": [
+      "ch*_lowbound_time",
+      "ch*_wave_velocity",
+      "ch*_minimum_thickness",
+      "ch*_threshold_snr",
+      "ch*_firstPeak",
+      "ch*_multiEcho",
+      "ch*_zeroCrossing",
+      "ch*_temperatureCorrected"
+    ],
+    "ascan_publisher": [
+      "numAverages",
+      "channelsOnReceive"
+    ]
+  },
+  "parameterDisplayNames": {
+    "ascan_processor": {
+      "ch*_lowbound_time": "Lower Bound (us)",
+      "ch*_wave_velocity": "Wave Velocity (m/s)",
+      "ch*_minimum_thickness": "Min Thickness (mm)",
+      "ch*_threshold_snr": "SNR Threshold (dB)",
+      "ch*_firstPeak": "First Peak Mode",
+      "ch*_multiEcho": "Multi Echo Mode",
+      "ch*_zeroCrossing": "Zero Crossing Mode",
+      "ch*_temperatureCorrected": "Temperature Correction Mode"
+    },
+    "ascan_publisher": {
+      "numAverages": "Number of Averages"
+    }
+  },
+  "parameter_bounds": {
+    "ascan_processor": {
+      "ch*_lowbound_time": {
+        "min": 0,
+        "max": 50
+      },
+      "ch*_wave_velocity": {
+        "min": 1000,
+        "max": 7000
+      },
+      "ch*_minimum_thickness": {
+        "min": 2,
+        "max": 100
+      },
+      "ch*_threshold_snr": {
+        "min": 0,
+        "max": 40
+      }
+    },
+    "ascan_publisher": {
+      "numAverages": {
+        "min": 1,
+        "max": 1000
+      }
+    }
+  }
+}
