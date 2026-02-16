@@ -1,11 +1,16 @@
+from __future__ import annotations
 import numpy as np
 import math
 from tabulate import tabulate
 import struct
-import time
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from VitesseAPI import Vitesse
 
 
-def ext_temp(np_list):
+
+def ext_temp(np_list: np.ndarray) -> float:
     """
     Converts 2-byte RTD data [byte2, byte3] into Celsius temperature.
     Assumes PT100 and 3900 Ohm reference resistor.
@@ -43,7 +48,7 @@ def ext_temp(np_list):
     return temp
 
 
-def int_temp(np_list):
+def int_temp(np_list: np.ndarray) -> float:
     """
     Convert two-byte FPGA/XADC output (from internal temperature register)
     into degrees Celsius. Expects np.uint8 array of [MSB, LSB] from do_out[15:0].
@@ -74,7 +79,7 @@ def int_temp(np_list):
     return temperature_c
 
 
-def dec_enc(bytes_array):
+def dec_enc(bytes_array: np.ndarray) -> int:
     """
     Decode a 4-byte array [MSB, ..., LSB] into an integer encoder count.
     Assumes LS7366R is in 32-bit mode, MSB-first SPI.
@@ -87,7 +92,7 @@ def dec_enc(bytes_array):
     return count
 
 
-def dec_enc_float(bytes_array):
+def dec_enc_float(bytes_array: np.ndarray) -> int:
     """
     Decode a 4-byte array [MSB, ..., LSB] into an integer encoder count.
     Assumes LS7366R is in 32-bit mode, MSB-first SPI.
@@ -97,11 +102,10 @@ def dec_enc_float(bytes_array):
 
     # Convert byte array to integer (MSB first)
     count = int.from_bytes(bytes_array, byteorder='big', signed=False)
-
     return struct.unpack('>f', struct.pack('>I', count))[0]
 
 
-def empty(bytes_array):
+def empty(bytes_array: np.ndarray):
     return None
 
 
@@ -165,7 +169,7 @@ def float16_to_decimal(bin_str: str) -> float:
     return value
 
 
-def decode_version_old(version_u16):
+def decode_version_old(version_u16: int) -> list[int]:
     # Split into 4 nibbles (4 bits each)
     n1 = (version_u16 >> 12) & 0xF
     n2 = (version_u16 >> 8) & 0xF
@@ -175,7 +179,7 @@ def decode_version_old(version_u16):
     return [n1, n2, n3, n4]
 
 
-def decode_version_new(version_u16: int):
+def decode_version_new(version_u16: int) -> list[int]:
     # Extract fields
     major = (version_u16 >> 8) & 0xFF   # upper 8 bits
     minor = (version_u16 >> 4) & 0xF    # next 4 bits
@@ -184,11 +188,7 @@ def decode_version_new(version_u16: int):
     return [major, minor, beta]
 
 
-def getVersion(obj):
-    Byte = obj.spiDevice.read(1)
-    time.sleep(obj.READ_DELAY)
-    ByteBack = np.frombuffer(Byte, dtype=np.uint8)
-    print("\n\nVersion Control")
+def getVersion(obj: Vitesse) -> None:
     version_u16 = obj.version_array
     version_display = ""
     for i, element in enumerate(version_u16):
@@ -205,10 +205,11 @@ def getVersion(obj):
         else:
             api_version_display = api_version_display + str(element)
 
-    rows = [
+    rows: list[list[str]] = [
         ["Firmware version", f"{version_display}", ""],
         ["API Version", f"{api_version_display}", ""],
-        ["Maximum Number of Channels", obj.maxChannels, ""]
+        ["Maximum Number of Channels", f"{obj.maxChannels}", ""],
+        # ["SHM System", "True" if obj.isSHM else "False", ""]
 
     ]
 
@@ -216,7 +217,7 @@ def getVersion(obj):
           "Value", "Extra"], tablefmt="grid"))
 
 
-def getConfig(obj):
+def getConfig(obj: Vitesse) -> None:
     print("\n\nCurrent Set Configuration Parameters")
 
     sensorArray = obj.sensorArray
@@ -228,32 +229,31 @@ def getConfig(obj):
         if enabled and sensor != "NA"
     ]
 
-    rows = [
+    rows: list[list[str]] = [
         ["Sensor Operating Frequency",
             f"{obj.opFrequency/1_000_000:.2f}", "MHz"],
         ["ADC Sampling Frequency",
-            f"{int(obj.ADC_FREQ)/1_000_000:.2f}", "MHz"],
+            f"{int(obj.adcFrequency)/1_000_000:.2f}", "MHz"],
         ["Pulser Frequency", f"{obj.pulseFrequency/1_000_000:.2f}", "MHz"],
-        ["Pulse Repetition Frequency (PRF)", obj.prf, "Hz"],
-        ["Number of Averages", obj.numAverages, ""],
-        ["Record Length", obj.recordLength*1e6, "us"],
-        ["Additional Data", enabled_sensors],
-        ["Data Sampling Mode", obj.samplingMode, "Bits"],
-        ["Channels Receiving", f"{obj.enabledChannelDrivers}", ""],
-        ["Channels Driving", f"{obj.enabledChannelReceive}", ""],
-        ["Maximum Number of Channels", obj.maxChannels, ""],
+        ["Pulse Repetition Frequency (PRF)", f"{obj.prf}", "Hz"],
+        ["Number of Averages", f"{obj.numAverages}", ""],
+        ["Record Length", f"{obj.recordLength*1e6}", "us"],
+        ["Additional Data", f"{enabled_sensors}"],
+        ["Data Sampling Mode", f"{obj.samplingMode}", "Bits"],
+        ["Channels Receiving", f"{obj.enabledChannelReceive}", ""],
+        ["Channels Driving", f"{obj.enabledChannelDrive}", ""],
+        ["Maximum Number of Channels", f"{obj.maxChannels}", ""],
     ]
     print(tabulate(rows, headers=["Parameter",
           "Value", "Units"], tablefmt="grid"))
 
-
-def getEncoderConfig(obj):
+def getEncoderConfig(obj: Vitesse) -> None:
     print("\n\nCurrent Enconder Parameters")
 
     rows = [
-        ["Encoder CPR", f"{obj.encoder_cpr}", ""],
-        ["Encoder Wheelbase", f"{obj.encoder_wheelbase}", "mm"],
-        ["Encoder Radius", f"{obj.encoder_radius}", "mm"],
+        ["Encoder CPR", f"{obj.encoderCpr}", ""],
+        ["Encoder Wheelbase", f"{obj.encoderWheelbase}", "mm"],
+        ["Wheel Radius", f"{obj.wheelRadius}", "mm"],
     ]
     print(tabulate(rows, headers=["Parameter",
           "Value", "Units"], tablefmt="grid"))

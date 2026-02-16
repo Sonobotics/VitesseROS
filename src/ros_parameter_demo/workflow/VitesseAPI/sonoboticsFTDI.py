@@ -1,6 +1,8 @@
+from __future__ import annotations
 import ctypes
 from ctypes import wintypes, create_string_buffer
 import math
+from pathlib import Path
 import platform
 import os
 import sys
@@ -49,11 +51,11 @@ def _copy_dll_to_system32():
                 pass
             return False
 
-    except Exception as e:
+    except:
         return False
 
 
-def _get_resource_path(relative_path: str):
+def _get_resource_path(relative_path: str) -> Union[str, Path]:
     """Get path to resource file"""
     package = __package__ or __name__.split('.')[0]
 
@@ -425,8 +427,6 @@ class sonoboticsFtdiChannel(ftdiChannel):
             error_msg = STATUS_MESSAGES.get(
                 return_code, f"Unknown status code: {return_code}")
             raise Exception(f"EEPROM write failed ({error_msg})")
-
-        # print("EEPROM write successful")
 
     def dumpEEPROM(self):
         return_code = self.lib.dump_eeprom(ctypes.c_void_p(self.ftHandle))

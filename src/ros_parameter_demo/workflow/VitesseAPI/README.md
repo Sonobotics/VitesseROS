@@ -24,7 +24,7 @@ The SONUS Vitesse Python API provides a comprehensive interface for the SONUS Vi
 
 ### Prerequisites
 
-1. Python 3.x (Tested with Python 3.12.3; Python 3.9+ strongly recommended)
+1. Python >= 3.8 (Tested with Python 3.12.3; Python 3.9+ strongly recommended)
 2. Required packages:
    ```bash
    pip install -r requirements.txt
@@ -154,11 +154,12 @@ V = Vitesse()
 
 ### Methods
 
-#### `initialise(serialNumber: str | None = None) -> Self`
-Initializes a connected Vitesse device.
+#### `initialise(serialNumber: Optional[str] = None, simulation: bool = False) -> Self`
+Initializes a connected Vitesse device, or a virtual (simulated) device if `simulation` is `True`.
 
 **Parameters:**
 - `serialNumber` (optional): The serial number of the specific device to connect to. If not provided, connects to the first available device.
+- `simulation` (optional): If `True`, initializes a virtual simulated device instead of a physical one. Defaults to `False`.
 
 **Returns:**
 - `Self`: Returns the instance for method chaining.
@@ -170,6 +171,8 @@ V.initialise()  # Connect to first available device
 V.initialise("12345")  # Connect to specific device
 # With chaining
 V.initialise().setConfig()  # Initialize and configure in one line
+# Simulation mode
+V.initialise(simulation=True)  # Initialize a virtual device
 ```
 
 #### `listDevices() -> list[tuple[str, str, int]]`
@@ -185,29 +188,29 @@ for serial, name, channels in devices:
     print(f"Device: {name}, Serial: {serial}, Channels: {channels}")
 ```
 
-#### `setConfig(self, numCycles: int = 2, channelsOnReceive: list[int] = [1, 0, 0, 0, 0, 0, 0, 0], channelsOnDrive: list[int] = [1, 0, 0, 0, 0, 0, 0, 0], PRF: int = 1000, numAverages: int = 100, recordLength: float = 50e-6, phaseArrayMicro: list[int] = [0, 0, 0, 0, 0, 0, 0, 0], delayArrayMicro: list[int] = [0, 0, 0, 0, 0, 0, 0, 0], peripheralsOnArray: list[int] = [0, 0, 0, 0, 0, 0, 0, 0], samplingMode: int = 24, pulseFrequency: int = int(200e6), opFrequency: int = int(3.6e6), encoder_wheelbase: int = int(40), encoder_radius: int = int(39.8/2), encoder_CPR: int = int(2048), targetClock: int = int(50e6) ) -> Self:`
-Configures all device parameters at once.
+#### `setConfig(numCycles: int = 2, channelsOnReceive: list[int] = [1,0,0,0,0,0,0,0], channelsOnDriver: list[int] = [1,0,0,0,0,0,0,0], PRF: int = 1000, numAverages: int = 100, recordLength: float = 200e-6, phaseArrayMicro: list[int] = [0,0,0,0,0,0,0,0], delayArrayMicro: list[int] = [0,0,0,0,0,0,0,0], peripheralsOnArray: list[int] = [0,0,0,0,0,0,0,0], samplingMode: int = 24, pulseFrequency: int = 200000000, opFrequency: int = 3600000, encoderWheelbase: int = 40, wheelRadius: float = 19, encoderCpr: int = 2048, targetClock: int = 50000000) -> Self`
+Configures all device parameters at once. This is recommended over setting each parameter manually, since this ensures the correct precedence of the parameters.
 
 **Returns:**
 - `Self`: Returns the instance for method chaining.
 
 **Parameters:**
 - `numCycles` (1-3): Number of cycles per symbol
-- `channelsOnReceive`: List of 0s and 1s indicating which receiver channels to enable
-- `channelsOnDrive`: List of 0s and 1s indicating which driver channels to enable
+- `channelsOnReceive`: List of 0s and 1s indicating which receive channels to enable
+- `channelsOnDriver`: List of 0s and 1s indicating which driving channels to enable
 - `PRF` (1-5000): Pulse Repetition Frequency in Hz
 - `numAverages` (1-1000): Number of averages for data acquisition
 - `recordLength`: Recording length in seconds
 - `phaseArrayMicro`: Phase delays in microseconds for each channel
 - `delayArrayMicro`: Record delays in microseconds for each channel
-- `peripheralsOnArray`: list[int] = [0, 0, 0, 0, 0, 0, 0, 0],
-- `samplingMode`: Packet size of acquired data (24 or 16 bit)
-- `pulseFrequency`: Sampling frequency of drive signal in Hz
-- `opFrequency`: Excitation frequency in Hz
-- `encoder_wheelbase`: Wheelbase between encoders in mm
-- `wheel_radius`: Radius of wheels in mm
-- `encoder_CPR`: Encoder CPR (counts per revolution)
-- `targetClock`: ADC sampling frequency in Hz
+- `peripheralsOnArray`: List of 0s and 1s indicating which peripherals to enable
+- `samplingMode`: Length in bits of the sampling data (16 or 24)
+- `pulseFrequency`: Pulse frequency in Hz
+- `opFrequency`: Operating frequency in Hz
+- `encoderWheelbase`: Encoder wheelbase value
+- `wheelRadius`: Encoder wheel radius
+- `encoderCpr`: Encoder Counts Per Revolution
+- `targetClock`: Target FPGA clock frequency in Hz
 
 #### `checkValidity(phaseArrayMicro: list[int] | None = None, delayArrayMicro: list[int] | None = None, recordLength: float | None = None, PRF: int | None = None) -> Self`
 Validates the configuration parameters to ensure they don't violate timing constraints.
@@ -220,21 +223,21 @@ If no value is given for a parameter, the current value stored in the instance w
 **Raises:**
 - `ValueError` if configuration is invalid
 
-#### `setSymbol(num_chips: int, num_cycles: int) -> Self`
+#### `setSymbol(numChips: int, numCycles: int) -> Self`
 Configures the excitation symbol parameters.
 
 **Parameters:**
-- `num_chips` (5-13): Determines number of chips
-- `num_cycles` (1-3): Number of cycles per symbol
+- `numChips` (1-100): Number of chips
+- `numCycles` (1-3): Number of cycles per symbol
 
 **Returns:**
 - `Self`: Returns the instance for method chaining.
 
-#### `setChannelDrive(self, channelsOnDrive: list[int]) -> Self:`
-Enables or disables specific driver channels.
+#### `setChannelDrive(self, channelsOnDrive: list[int]) -> Self`
+Enables or disables specific driver channels (not to be confused with setChannelReceive).
 
 **Parameters:**
-- `channelsOnDrive`: List of 8 integers (0 or 1) for channels 1-8
+- `channelsOnDrive`: List of 8 integers (0 or 1) for channels 1-8 indicating which channels to enable.
 
 **Example:**
 ```python
@@ -244,11 +247,11 @@ V.setChannelDrive([1, 1, 0, 0, 0, 0, 0, 0])  # Enable driver channels 1 and 2
 **Returns:**
 - `Self`: Returns the instance for method chaining.
 
-#### `setChannelReceive(self, channelsOnReceive: list[int]) -> Self:`
-Enables or disables specific receiver channels.
+#### `setChannelReceive(self, channelsOnReceive: list[int]) -> Self`
+Enables or disables specific receiver channels for getArray.
 
 **Parameters:**
-- `channelsOnReceive`: List of 8 integers (0 or 1) for channels 1-8
+- `channelsOnReceive`: List of 8 integers (0 or 1) for channels 1-8 indicating which channels to enable.
 
 **Example:**
 ```python
@@ -306,7 +309,7 @@ Sets recording delays for each channel.
 **Returns:**
 - `Self`: Returns the instance for method chaining.
 
-#### `getArray(self) -> np.ndarray[tuple[int, int], np.dtype[np.float64]]`
+#### `getArray() -> numpy.ndarray[tuple[int, int], np.dtype[np.float64]]`
 Acquires data from the device.
 
 **Returns:**

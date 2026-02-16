@@ -155,7 +155,7 @@ class Publisher(Node):
                 encoded_data = base64.b64encode(channel_data).decode('ascii')
                 ascan_data_list.append(encoded_data)
         else:  # If array is 1D, split evenly among active channels
-            points_per_channel = len(array) // self.V.numChannelsOn
+            points_per_channel = len(array) // self.V.numChannelsOnReceive
             for i in range(len(active_channels)):
                 start_idx = i * points_per_channel
                 end_idx = (i + 1) * points_per_channel

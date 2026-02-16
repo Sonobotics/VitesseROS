@@ -7,7 +7,11 @@ package_name = 'ros_parameter_demo'
 setup(
     name=package_name,
     version='1.0.0',
-    packages=find_packages(exclude=['test']),
+    packages=find_packages(exclude=['test']) + [
+        "workflow.VitesseAPI.simulator",
+        "workflow.VitesseAPI.libraries",
+        "workflow.AscanProcessingModule.objects.x86_64"
+    ],
     include_package_data=True,
     data_files=[
         ('share/ament_index/resource_index/packages',
@@ -17,6 +21,8 @@ setup(
             ['workflow/config.json']),
         (os.path.join('lib', package_name, 'VitesseAPI', 'libraries'),
             glob('workflow/VitesseAPI/libraries/*')),
+        (os.path.join('lib', package_name, 'VitesseAPI', 'simulator'),
+            glob('workflow/VitesseAPI/simulator/*')),
         (os.path.join('lib', package_name, 'AscanProcessingModule', 'objects', 'x86_64'),
             glob('workflow/AscanProcessingModule/objects/x86_64/*')),
     ],
