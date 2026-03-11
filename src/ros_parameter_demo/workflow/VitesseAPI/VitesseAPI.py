@@ -1,7 +1,7 @@
 # API Compatible with binary version 26.1.2 and below
 from __future__ import annotations
 from types import FunctionType
-from .utils import float16_to_decimal, float24_to_decimal, int_temp, ext_temp, dec_enc, dec_enc_float, empty, decode_version_new
+from .utils import int_temp, ext_temp, dec_enc, dec_enc_float, empty, decode_version_new
 from . import sonoboticsFTDI as sbftdi
 import time
 import numpy as np
@@ -42,8 +42,8 @@ class Vitesse:
         self.adcFrequency: int = DEFAULT_ADC_FREQ
         self.prf: int = 0
         self.recordLength: float = 0
-        self.phaseArrayMicro: list[int] = [0, 0, 0, 0, 0, 0, 0, 0]
-        self.delayArrayMicro: list[int] = [0, 0, 0, 0, 0, 0, 0, 0]
+        self.phaseArrayMicro: list[float] = [0, 0, 0, 0, 0, 0, 0, 0]
+        self.delayArrayMicro: list[float] = [0, 0, 0, 0, 0, 0, 0, 0]
         self.samplingMode: int = 24
         self.numAverages: int = 1
         self.maxChannels: int = 0
@@ -88,15 +88,15 @@ class Vitesse:
         # This is used to store the array format of the version. Element 0 is always the major build and is used for feature updates.
         self.version_array: list[int] = []
         # The API version is compatible with FPGA binaries up to this.
-        self.APIVersion: list[int] = [26, 1, 2]
+        self.APIVersion: list[int] = [26, 2, 4]
 
         self.internalTemp: float = 0.0
         self.externalTemp: float = 0.0
         self.e1: int = 0
         self.e2: int = 0
-        self.ex: int = 0
-        self.ey: int = 0
-        self.etheta: int = 0
+        self.ex: float = 0
+        self.ey: float = 0
+        self.etheta: float = 0
         self.encoderWheelbase: float = 0
         self.wheelRadius: float = 0
         self.encoderCpr: float = 0
@@ -127,7 +127,6 @@ class Vitesse:
             ValueError: The provided serial number does not belong to a Vitesse device.
             IOError: No SPI device found, or none of the devices is a Vitesse device.
         """
-
         self.simulation = simulation
         if self.simulation:
             self.spiDevice = sbftdi.ftdiChannel()
@@ -156,10 +155,9 @@ class Vitesse:
             "SPI", "serialNum", serialNumber.encode())
 
         # Clearing the buffer
-        initialarray = [0, 0, 0]
+        initialarray = [0,0,0]
         while initialarray[-1] != 200 or initialarray[-2] != 200 or initialarray[-3] != 200:
-            initialarray = np.frombuffer(
-                self.spiDevice.read(1000), dtype=np.uint8)
+            initialarray = np.frombuffer(self.spiDevice.read(1000), dtype=np.uint8)
 
         self.maxChannels = devices[0][2]  # Channel information for listDevices
         self.setAdcThreshold()
@@ -171,42 +169,39 @@ class Vitesse:
             self.version = 256
 
         self.version_array = decode_version_new(self.version)
-
         try:
             self.adcFrequency = self.getFrequency()
         except ValueError:
             # Handle for legacy FPGA binaries
             self.adcFrequency = DEFAULT_ADC_FREQ
-
-        # Load default parameters
         self.setConfig()
-
         return self
 
     @staticmethod
     def listDevices() -> list[tuple[str, str, int]]:
         """
-        Lists the actual Vitesse devices currently connected to the device. Virtual devices are not counted.
-
-        Returns:
-            devices (list[(serialNumber: str, deviceName: str, numberOfChannels: int)]): list of tuples containing Vitesse device information.
+        Lists the actual Vitesse devices currently connected to the device.
+        Virtual devices are not counted.
         """
         numDevices = sbftdi.getNumDevices()
+
         serialNumbers: list[str] = []
         devices: list[tuple[str, str, int]] = []
 
-        for i in range(0, numDevices):
+        for i in range(numDevices):
             try:
                 spiDevice = sbftdi.sonoboticsFtdiChannel("SPI", "deviceNum", i)
-            except Exception:
-                # Cannot connect to a device, probably because it's locked by other process; omit it
+            except Exception as e:
                 continue
+
+            # read EEPROM
             eepromData = spiDevice.readEEPROM()
 
             manufacturer = eepromData['Manufacturer']
             serialNumber = eepromData['Serial Number']
             device = eepromData['Device']
 
+            # filtering logic
             if ((manufacturer == 'Sonobotics')
                     and serialNumber != "0"
                     and serialNumber not in serialNumbers
@@ -214,17 +209,17 @@ class Vitesse:
                 devices.append((serialNumber, device, int(device[0])))
                 serialNumbers.append(serialNumber)
 
+            # close device
             spiDevice.close()
-
         return devices
 
-    def checkValidity(self, phaseArrayMicro: Optional[list[int]] = None, delayArrayMicro: Optional[list[int]] = None, recordLength: Optional[float] = None, PRF: Optional[int] = None) -> Self:
+    def checkValidity(self, phaseArrayMicro: Optional[list[float]] = None, delayArrayMicro: Optional[list[float]] = None, recordLength: Optional[float] = None, PRF: Optional[int] = None) -> Self:
         """
         Checks validity of a set of Vitesse configuration parameters.
 
         Args:
-            phaseArrayMicro (list[int]): Phasing in microseconds for each channel e.g. [Channel 1 Phase (us), Channel 2 Phase (us), etc.]
-            delayArrayMicro (list[int]): Delay in microseconds for each channel e.g. [Channel 1 Delay (us), Channel 2 Delay (us), etc.]
+            phaseArrayMicro (list[float]): Phasing in microseconds for each channel e.g. [Channel 1 Phase (us), Channel 2 Phase (us), etc.]
+            delayArrayMicro (list[float]): Delay in microseconds for each channel e.g. [Channel 1 Delay (us), Channel 2 Delay (us), etc.]
             recordLength (float): Record Length Range
             PRF (int): PRF Range: 1 to 5000 Hz
 
@@ -295,14 +290,14 @@ class Vitesse:
                   PRF:                  int = 1000,
                   numAverages:          int = 100,
                   recordLength:         float = 50e-6,
-                  phaseArrayMicro:      list[int] = [0, 0, 0, 0, 0, 0, 0, 0],
-                  delayArrayMicro:      list[int] = [0, 0, 0, 0, 0, 0, 0, 0],
+                  phaseArrayMicro:      list[float] = [0, 0, 0, 0, 0, 0, 0, 0],
+                  delayArrayMicro:      list[float] = [0, 0, 0, 0, 0, 0, 0, 0],
                   peripheralsOnArray:   list[int] = [0, 0, 0, 0, 0, 0, 0, 0],
                   samplingMode:         int = 24,
                   pulseFrequency:       int = int(200e6),
                   opFrequency:          int = int(3.6e6),
-                  encoderWheelbase:     int = 40,
-                  wheelRadius:        float = 39.8/2,
+                  encoderWheelbase:     float = 40,
+                  wheelRadius:          float = 39.8/2,
                   encoderCpr:           int = 2048,
                   targetClock:          int = int(50e6)
                   ) -> Self:
@@ -654,7 +649,6 @@ class Vitesse:
             return self
 
         self.clearCounterEnable([0, 0, 0, 0, 0, 0, 0, 0])
-        time.sleep(1)
         self.clearCounterEnable([1, 0, 0, 0, 0, 0, 0, 0])
         return self
 
@@ -846,7 +840,9 @@ class Vitesse:
         :return: The ADC sampling frequency.
         :rtype: int
         """
-        if self.simulation:
+        # This function is not available on older binaries.
+        # However, for all old binaries, we are using 50 MHz, so we are directly returning the value here.
+        if self.simulation or self.version < 3000:
             return DEFAULT_ADC_FREQ
         if self.spiDevice is None:
             raise IOError(
@@ -924,12 +920,12 @@ class Vitesse:
         self._writeSpiDevice(record)
         return self
 
-    def setTriggerPhasing(self, phaseArrayMicro: list[int]) -> Self:
+    def setTriggerPhasing(self, phaseArrayMicro: list[float]) -> Self:
         """
         Sets the trigger phasing for each channel.
 
         Args:
-            phaseArrayMicro (list[int]): Phase delays in microseconds for each channel.
+            phaseArrayMicro (list[float]): Phase delays in microseconds for each channel.
 
         Returns:
             Self: Returns the instance for method chaining.
@@ -959,12 +955,12 @@ class Vitesse:
                 self._writeSpiDevice(phase)
         return self
 
-    def setRecordDelay(self, delayArrayMicro: list[int]) -> Self:
+    def setRecordDelay(self, delayArrayMicro: list[float]) -> Self:
         """
         Sets the record delay for each channel.
 
         Args:
-            delayArrayMicro (list[int]): Delay values in microseconds for each channel.
+            delayArrayMicro (list[float]): Delay values in microseconds for each channel.
 
         Returns:
             Self: Returns the instance for method chaining.
@@ -1166,20 +1162,12 @@ class Vitesse:
         indicesToDelete = np.arange(-1 * (self.additionalBytes + 1), -1)
         array = np.delete(array, indicesToDelete)
 
-        # -------------------------
-        # Convert to binary string
-        # -------------------------
-        arr_uint8 = array.astype(np.uint8)
-
-        def _to_binary(x: int) -> str:
-            return format(x, '08b')
-        binary_strings = np.vectorize(_to_binary)(arr_uint8)
-
-        channel = np.split(binary_strings, self.numChannelsOnReceive)
+        array = np.array(array, dtype=np.float16)
+        channel = np.split(array, self.numChannelsOnReceive)
         channel = [ch[1:-1] for ch in channel]  # Trim first and last markers
 
-        byteArray = np.empty(
-            (self.numChannelsOnReceive, self.recordPoints, self.messageBytes), dtype='<U8')
+        rawBytesArray = np.empty(
+            (self.numChannelsOnReceive, self.recordPoints, self.messageBytes), dtype=float)
         reshapeArray = np.empty(
             (self.numChannelsOnReceive, self.recordPoints), dtype=float)
         normArray = np.empty(
@@ -1187,29 +1175,24 @@ class Vitesse:
         echoSignal = np.empty(
             (self.numChannelsOnReceive, self.recordPoints), dtype=float)
 
+        if self.maxChannels <= 4:
+            inversionArray = [0, 3]
+        else:
+            inversionArray = [0, 1, 6, 7]
+
         for i in range(self.numChannelsOnReceive):
-            byteArray[i] = np.reshape(channel[i], (-1, self.messageBytes))
-            temp: list[float] = []
-            for row in byteArray[i]:
-                joined = ''.join(row.tolist())
-                if self.messageBytes == 2:
-                    temp.append(float16_to_decimal(joined))
-                elif self.messageBytes == 3:
-                    temp.append(float24_to_decimal(joined))
-            reshapeArray[i] = np.array(temp)
+            rawBytesArray[i] = np.reshape(channel[i], (-1, self.messageBytes))
+            if self.messageBytes == 3:
+                reshapeArray[i] = rawBytesArray[i][:, 2] + rawBytesArray[i][:,
+                                                                        1] * (2**8) + rawBytesArray[i][:, 0] * (2**16)
+            elif self.messageBytes == 2:
+                reshapeArray[i] = rawBytesArray[i][:, 1] * (2**8) + rawBytesArray[i][:, 0] * (2**16)
             normArray[i] = np.divide(reshapeArray[i], self.numAverages)
-
-            if self.maxChannels <= 4:
-                inversionArray = [0, 3]
-            else:
-                inversionArray = [0, 1, 6, 7]
-
             # Conditional inversion for specific channel IDs
             if self.enabledChannelReceive[i] in inversionArray:
                 echoSignal[i] = np.subtract(normArray[i], 2048) * -1
             else:
                 echoSignal[i] = np.subtract(normArray[i], 2048)
-
         return echoSignal
 
     def _getArrayLegacy(self) -> np.ndarray[tuple[int, int], np.dtype[np.float64]]:
@@ -1272,7 +1255,6 @@ class Vitesse:
         indicesToDelete = np.arange(-1 * (additionalBytes + 1), -1)
         # Remove them from the main array
         array = np.delete(array, indicesToDelete)
-
         array = np.array(array, dtype=np.float16)
 
         channel = np.split(array, self.numChannelsOnReceive)
@@ -1302,7 +1284,6 @@ class Vitesse:
                 echoSignal[i] = np.subtract(normArray[i], 2048) * -1
             else:
                 echoSignal[i] = np.subtract(normArray[i], 2048)
-
         return echoSignal
 
     def setSleepTime(self, sleepTime: int) -> Self:

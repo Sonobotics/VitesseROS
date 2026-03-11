@@ -38,7 +38,7 @@ class Publisher(Node):
         # Cycles Range: 1 to 3
         self.declare_parameter('numCycles', 2, descriptor=parameterDescriptor)
         # Record Length Range: 0 to 100 us (8 CH), 0 to 200 us (4 CH), 0 to 800 us (8 CH)
-        self.declare_parameter('recordLength', 20e-6,
+        self.declare_parameter('recordLength', 50e-6,
                                descriptor=parameterDescriptor)
         # PRF Range: 1 to 5000 Hz
         self.declare_parameter('PRF', 1000, descriptor=parameterDescriptor)

@@ -23,6 +23,8 @@ setup(
             glob('workflow/VitesseAPI/libraries/*')),
         (os.path.join('lib', package_name, 'VitesseAPI', 'simulator'),
             glob('workflow/VitesseAPI/simulator/*')),
+        (os.path.join('lib', package_name, 'VitesseAPI', 'drivers', 'linux_arm_FTDI'),
+            glob('workflow/VitesseAPI/drivers/linux_arm_FTDI/*.sh')),
         (os.path.join('lib', package_name, 'AscanProcessingModule', 'objects', 'x86_64'),
             glob('workflow/AscanProcessingModule/objects/x86_64/*')),
     ],

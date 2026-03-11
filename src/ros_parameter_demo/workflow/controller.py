@@ -65,6 +65,10 @@ class ParameterDiscovery(QThread):
         """Optimized node discovery with caching"""
         try:
             current_nodes = set()
+
+            current_nodes.add("ascan_publisher")
+            current_nodes.add("ascan_processor")
+
             for name, ns in self.ros_node.get_node_names_and_namespaces():
                 full = (ns.rstrip('/') + '/' + name) if ns and ns != '/' else name
                 full = full.lstrip('/')
@@ -127,11 +131,11 @@ class ParameterDiscovery(QThread):
                 list_client, get_client, describe_client = self.service_clients[node_name]
 
             # Quick service availability check
-            if not list_client.wait_for_service(timeout_sec=0.5):
+            if not list_client.wait_for_service(timeout_sec=2):
                 return {}
-            if not get_client.wait_for_service(timeout_sec=0.5):
+            if not get_client.wait_for_service(timeout_sec=2):
                 return {}
-            if not describe_client.wait_for_service(timeout_sec=0.5):
+            if not describe_client.wait_for_service(timeout_sec=2):
                 return {}
 
             # List parameters with shorter timeout
@@ -902,7 +906,7 @@ class ParameterManagerGUI(QMainWindow):
             client = self.ros_node.create_client(
                 GetParameters, '/ascan_publisher/get_parameters')
 
-            if not client.wait_for_service(timeout_sec=1.0):
+            if not client.wait_for_service(timeout_sec=2):
                 print("Publisher service not available")
                 return None
 
@@ -1062,7 +1066,7 @@ class ParameterManagerGUI(QMainWindow):
             client = self.ros_node.create_client(
                 SetParameters, f'/{node_name}/set_parameters')
 
-            if not client.wait_for_service(timeout_sec=2.0):
+            if not client.wait_for_service(timeout_sec=2):
                 raise Exception(f"Service not available for {node_name}")
 
             request = SetParameters.Request()
