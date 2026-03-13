@@ -99,9 +99,6 @@ The publisher does not include code on temperature gathering. You should impleme
 
 **Purpose**: Provides a PyQt5-based GUI for real-time parameter monitoring and control.
 
-The controller now includes two buttons: **"Actuate Forward"** and **"Actuate Backward"**, which call the `/actuate_forward` and `/actuate_backward` services respectively. The GUI will display a status message indicating whether each service call succeeded.
-
-
 **Key Features**:
 
 - Automatic discovery of ROS2 nodes and their parameters
@@ -110,6 +107,7 @@ The controller now includes two buttons: **"Actuate Forward"** and **"Actuate Ba
 - Support for various parameter types (sliders, spinboxes, checkboxes)
 - Real-time parameter updates with visual feedback
 - Configurable display names and parameter bounds
+- Buttons to control actuation of motor driver
 
 **Configuration** (`config.json`):
 
@@ -140,8 +138,6 @@ float32 temperature       # Current temperature reading
 ```
 
 ### Actuation Nodes (`forward_node`, `backward_node`)
-
-**Purpose**: Offers two ROS2 `std_srvs/Trigger` services named `/actuate_forward` and `/actuate_backward`. The service callbacks are placeholders; users should implement actual actuator logic inside `forward_node.py` and `backward_node.py`.
 
 **Usage**:
 
@@ -184,6 +180,16 @@ ros2 run ros_parameter_demo processor
 
 ```bash
 ros2 run ros_parameter_demo controller
+```
+
+4. If you have the actuator peripheral, launch the forward and backward nodes in separate terminals:
+
+```bash
+ros2 run ros_parameter_demo forward
+```
+
+```bash
+ros2 run ros_parameter_demo backward
 ```
 
 ### Configuring Channels
