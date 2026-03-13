@@ -40,6 +40,7 @@ setup(
             'processor = workflow.processor:main',
             'publisher = workflow.publisher:main',
             'controller = workflow.controller:main',
+            'motor = workflow.motor_node:main',
         ],
     },
 )

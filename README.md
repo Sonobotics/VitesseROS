@@ -9,6 +9,7 @@ The system consists of three main ROS2 nodes that work together:
 1. **Publisher Node** (`publisher.py`) - Interfaces with Vitesse hardware to acquire ultrasonic A-scan data
 2. **Processor Node** (`processor.py`) - Processes raw A-scan data and displays real-time visualizations
 3. **Controller Node** (`controller.py`) - Provides a GUI for monitoring and controlling system parameters
+4. **Motor Node** (`motor_node.py`) - Exposes a simple Trigger service that turns a motor on when requested (used by the controller UI)
 
 ## Architecture
 
@@ -97,6 +98,9 @@ The publisher does not include code on temperature gathering. You should impleme
 
 **Purpose**: Provides a PyQt5-based GUI for real-time parameter monitoring and control.
 
+The controller now also includes a "Run Motor" button; clicking it calls the `/run_motor` service provided by the motor node.  The GUI will display a status message indicating whether the service call succeeded.
+
+
 **Key Features**:
 
 - Automatic discovery of ROS2 nodes and their parameters
@@ -133,6 +137,16 @@ int32[] active_channels    # List of active channel numbers (1-8)
 string[] ascan_data       # Base64-encoded waveform data for each active channel
 float32 temperature       # Current temperature reading
 ```
+
+### Motor Node (`motor_controller`)
+
+**Purpose**: Offers a ROS2 `std_srvs/Trigger` service named `/run_motor`.  The service callback is currently a placeholder; users should implement the actual motor‑on logic inside `motor_node.py`.
+
+**Usage**:
+
+- Start the node with `ros2 run ros_parameter_demo motor`
+- The controller GUI exposes a "Run Motor" button which invokes this service and displays the response in the status bar.
+
 
 ## Dependencies
 
