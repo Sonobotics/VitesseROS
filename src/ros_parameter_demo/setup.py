@@ -10,7 +10,7 @@ setup(
     packages=find_packages(exclude=['test']) + [
         "workflow.VitesseAPI.simulator",
         "workflow.VitesseAPI.libraries",
-        "workflow.AscanProcessingModule.objects.x86_64"
+        "workflow.AscanProcessingModule.objects.x86_64",
     ],
     include_package_data=True,
     data_files=[
@@ -40,7 +40,8 @@ setup(
             'processor = workflow.processor:main',
             'publisher = workflow.publisher:main',
             'controller = workflow.controller:main',
-            'motor = workflow.motor_node:main',
+            'forward = workflow.forward_node:forward_main',
+            'backward = workflow.backward_node:backward_main',
         ],
     },
 )

@@ -4,12 +4,13 @@ This project contains a ROS2-based ultrasonic data acquisition and processing sy
 
 ## Overview
 
-The system consists of three main ROS2 nodes that work together:
+The system consists of five main ROS2 nodes that work together:
 
 1. **Publisher Node** (`publisher.py`) - Interfaces with Vitesse hardware to acquire ultrasonic A-scan data
 2. **Processor Node** (`processor.py`) - Processes raw A-scan data and displays real-time visualizations
 3. **Controller Node** (`controller.py`) - Provides a GUI for monitoring and controlling system parameters
-4. **Motor Node** (`motor_node.py`) - Exposes a simple Trigger service that turns a motor on when requested (used by the controller UI)
+4. **Forward Node** (`forward_node.py`) - Exposes a Trigger service that moves the actuator forward when requested
+5. **Backward Node** (`backward_node.py`) - Exposes a Trigger service that moves the actuator backward when requested
 
 ## Architecture
 
@@ -98,7 +99,7 @@ The publisher does not include code on temperature gathering. You should impleme
 
 **Purpose**: Provides a PyQt5-based GUI for real-time parameter monitoring and control.
 
-The controller now also includes a "Run Motor" button; clicking it calls the `/run_motor` service provided by the motor node.  The GUI will display a status message indicating whether the service call succeeded.
+The controller now includes two buttons: **"Actuate Forward"** and **"Actuate Backward"**, which call the `/actuate_forward` and `/actuate_backward` services respectively. The GUI will display a status message indicating whether each service call succeeded.
 
 
 **Key Features**:
@@ -138,14 +139,14 @@ string[] ascan_data       # Base64-encoded waveform data for each active channel
 float32 temperature       # Current temperature reading
 ```
 
-### Motor Node (`motor_controller`)
+### Actuation Nodes (`forward_node`, `backward_node`)
 
-**Purpose**: Offers a ROS2 `std_srvs/Trigger` service named `/run_motor`.  The service callback is currently a placeholder; users should implement the actual motor‑on logic inside `motor_node.py`.
+**Purpose**: Offers two ROS2 `std_srvs/Trigger` services named `/actuate_forward` and `/actuate_backward`. The service callbacks are placeholders; users should implement actual actuator logic inside `forward_node.py` and `backward_node.py`.
 
 **Usage**:
 
-- Start the node with `ros2 run ros_parameter_demo motor`
-- The controller GUI exposes a "Run Motor" button which invokes this service and displays the response in the status bar.
+- Start either node with `ros2 run ros_parameter_demo forward` or `ros2 run ros_parameter_demo backward`
+- The controller GUI exposes "Actuate Forward" and "Actuate Backward" buttons which invoke the corresponding services and display the response in the status bar.
 
 
 ## Dependencies

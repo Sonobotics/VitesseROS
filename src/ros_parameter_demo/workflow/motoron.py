@@ -12,7 +12,7 @@ except ImportError:
   Enum = object
   def enum_value(x): return x
 
-from motoron_protocol import *
+from .motoron_protocol import *
 
 ## \file motoron.py
 ##

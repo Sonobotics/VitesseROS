@@ -22,7 +22,7 @@ from PyQt5.QtCore import Qt, pyqtSignal, QThread, QTimer
 from PyQt5.QtGui import QFont
 import concurrent.futures
 
-# service type used by the Run Motor button
+# service type used by the Actuate Forward/Backward buttons
 from std_srvs.srv import Trigger
 
 
@@ -71,8 +71,9 @@ class ParameterDiscovery(QThread):
 
             current_nodes.add("ascan_publisher")
             current_nodes.add("ascan_processor")
-            # Motor node should also show up even if no parameters exist yet
-            current_nodes.add("motor_controller")
+            # Forward/backward nodes should also show up even if no parameters exist yet
+            current_nodes.add("forward_node")
+            current_nodes.add("backward_node")
 
             for name, ns in self.ros_node.get_node_names_and_namespaces():
                 full = (ns.rstrip('/') + '/' + name) if ns and ns != '/' else name
@@ -748,8 +749,9 @@ class ParameterManagerGUI(QMainWindow):
         rclpy.init()
         self.ros_node = Node('parameter_manager_gui')
 
-        # create a client for motor service; it may not be available yet
-        self.motor_client = self.ros_node.create_client(Trigger, '/run_motor')
+        # create clients for forward/backward actuation services; they may not be available yet
+        self.forward_client = self.ros_node.create_client(Trigger, '/actuate_forward')
+        self.backward_client = self.ros_node.create_client(Trigger, '/actuate_backward')
 
         # Start ROS spinning in separate thread
         self.ros_thread = threading.Thread(
@@ -786,10 +788,14 @@ class ParameterManagerGUI(QMainWindow):
         self.refresh_btn.clicked.connect(self.manual_refresh)
         button_layout.addWidget(self.refresh_btn)
 
-        # motor control button
-        self.motor_btn = QPushButton("Run Motor")
-        self.motor_btn.clicked.connect(self.motor_button_pressed)
-        button_layout.addWidget(self.motor_btn)
+        # actuation buttons
+        self.forward_btn = QPushButton("Actuate Forward")
+        self.forward_btn.clicked.connect(self.actuate_forward_pressed)
+        button_layout.addWidget(self.forward_btn)
+
+        self.backward_btn = QPushButton("Actuate Backward")
+        self.backward_btn.clicked.connect(self.actuate_backward_pressed)
+        button_layout.addWidget(self.backward_btn)
 
         button_layout.addStretch()
 
@@ -830,31 +836,37 @@ class ParameterManagerGUI(QMainWindow):
         # Clear cache to force fresh discovery
         self.discovery.service_clients.clear()
         self.discovery.last_nodes.clear()
-        # rebuild motor client in case service endpoint changed
-        if hasattr(self, 'ros_node') and self.ros_node is not None:
-            self.motor_client = self.ros_node.create_client(Trigger, '/run_motor')
 
-    def motor_button_pressed(self):
-        """Called when the user clicks the Run Motor button"""
+        # Recreate clients in case service endpoint changed
+        if hasattr(self, 'ros_node') and self.ros_node is not None:
+            self.forward_client = self.ros_node.create_client(Trigger, '/actuate_forward')
+            self.backward_client = self.ros_node.create_client(Trigger, '/actuate_backward')
+
+    def _call_actuation_service(self, client, label: str):
+        """Call the given Trigger service client and update status label."""
         if not self.ros_node:
             return
-        # ensure we have a client
-        if not hasattr(self, 'motor_client') or self.motor_client is None:
-            self.motor_client = self.ros_node.create_client(Trigger, '/run_motor')
-        # wait briefly for service
-        if not self.motor_client.wait_for_service(timeout_sec=0.5):
-            self.status_label.setText("Motor service unavailable")
+        if client is None:
+            self.status_label.setText(f"{label} service not available")
+            return
+        if not client.wait_for_service(timeout_sec=0.5):
+            self.status_label.setText(f"{label} service unavailable")
             return
         req = Trigger.Request()
-        future = self.motor_client.call_async(req)
-        # block until done (GUI is already running in separate thread)
+        future = client.call_async(req)
         while not future.done():
             time.sleep(0.01)
         try:
             res = future.result()
-            self.status_label.setText(f"Motor service returned: {res.success}, {res.message}")
+            self.status_label.setText(f"{label} service returned: {res.success}, {res.message}")
         except Exception as e:
-            self.status_label.setText(f"Motor service call failed: {e}")
+            self.status_label.setText(f"{label} service call failed: {e}")
+
+    def actuate_forward_pressed(self):
+        self._call_actuation_service(self.forward_client, 'Actuate Forward')
+
+    def actuate_backward_pressed(self):
+        self._call_actuation_service(self.backward_client, 'Actuate Backward')
 
     def update_node_parameters(self, node_params: Dict[str, Dict]):
         """Update GUI with discovered node parameters"""
