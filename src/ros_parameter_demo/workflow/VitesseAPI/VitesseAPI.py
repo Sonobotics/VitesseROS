@@ -127,6 +127,7 @@ class Vitesse:
             ValueError: The provided serial number does not belong to a Vitesse device.
             IOError: No SPI device found, or none of the devices is a Vitesse device.
         """
+
         self.simulation = simulation
         if self.simulation:
             self.spiDevice = sbftdi.ftdiChannel()
@@ -155,9 +156,10 @@ class Vitesse:
             "SPI", "serialNum", serialNumber.encode())
 
         # Clearing the buffer
-        initialarray = [0,0,0]
+        initialarray = [0, 0, 0]
         while initialarray[-1] != 200 or initialarray[-2] != 200 or initialarray[-3] != 200:
-            initialarray = np.frombuffer(self.spiDevice.read(1000), dtype=np.uint8)
+            initialarray = np.frombuffer(
+                self.spiDevice.read(1000), dtype=np.uint8)
 
         self.maxChannels = devices[0][2]  # Channel information for listDevices
         self.setAdcThreshold()
@@ -169,39 +171,42 @@ class Vitesse:
             self.version = 256
 
         self.version_array = decode_version_new(self.version)
+
         try:
             self.adcFrequency = self.getFrequency()
         except ValueError:
             # Handle for legacy FPGA binaries
             self.adcFrequency = DEFAULT_ADC_FREQ
+
+        # Load default parameters
         self.setConfig()
+
         return self
 
     @staticmethod
     def listDevices() -> list[tuple[str, str, int]]:
         """
-        Lists the actual Vitesse devices currently connected to the device.
-        Virtual devices are not counted.
+        Lists the actual Vitesse devices currently connected to the device. Virtual devices are not counted.
+
+        Returns:
+            devices (list[(serialNumber: str, deviceName: str, numberOfChannels: int)]): list of tuples containing Vitesse device information.
         """
         numDevices = sbftdi.getNumDevices()
-
         serialNumbers: list[str] = []
         devices: list[tuple[str, str, int]] = []
 
-        for i in range(numDevices):
+        for i in range(0, numDevices):
             try:
                 spiDevice = sbftdi.sonoboticsFtdiChannel("SPI", "deviceNum", i)
-            except Exception as e:
+            except Exception:
+                # Cannot connect to a device, probably because it's locked by other process; omit it
                 continue
-
-            # read EEPROM
             eepromData = spiDevice.readEEPROM()
 
             manufacturer = eepromData['Manufacturer']
             serialNumber = eepromData['Serial Number']
             device = eepromData['Device']
 
-            # filtering logic
             if ((manufacturer == 'Sonobotics')
                     and serialNumber != "0"
                     and serialNumber not in serialNumbers
@@ -209,8 +214,8 @@ class Vitesse:
                 devices.append((serialNumber, device, int(device[0])))
                 serialNumbers.append(serialNumber)
 
-            # close device
             spiDevice.close()
+
         return devices
 
     def checkValidity(self, phaseArrayMicro: Optional[list[float]] = None, delayArrayMicro: Optional[list[float]] = None, recordLength: Optional[float] = None, PRF: Optional[int] = None) -> Self:
@@ -537,7 +542,7 @@ class Vitesse:
         # backward compatible with older firmware
         if (self.version < 1000):
             return self
-        
+
         self.samplingMode = samplingMode
 
         if self.samplingMode == 16:
@@ -708,7 +713,6 @@ class Vitesse:
             self.prf = PRF
             return self
 
-
     def setEncoderWheelbase(self, wheelbase: float) -> Self:
         '''
         Sets the encoder wheelbase.
@@ -788,7 +792,6 @@ class Vitesse:
         """
         if self.simulation:
             return 23
-
 
         if self.spiDevice is None:
             raise IOError(
@@ -1093,6 +1096,7 @@ class Vitesse:
                     np.random.normal(0.0, noise_std, clean.shape)
 
             echoSignal = accumulator / self.numAverages
+            echoSignal = np.tile(echoSignal, (self.numChannelsOnReceive, 1))
             self.messageArray = []
             return echoSignal
 
@@ -1184,15 +1188,17 @@ class Vitesse:
             rawBytesArray[i] = np.reshape(channel[i], (-1, self.messageBytes))
             if self.messageBytes == 3:
                 reshapeArray[i] = rawBytesArray[i][:, 2] + rawBytesArray[i][:,
-                                                                        1] * (2**8) + rawBytesArray[i][:, 0] * (2**16)
+                                                                            1] * (2**8) + rawBytesArray[i][:, 0] * (2**16)
             elif self.messageBytes == 2:
-                reshapeArray[i] = rawBytesArray[i][:, 1] * (2**8) + rawBytesArray[i][:, 0] * (2**16)
+                reshapeArray[i] = rawBytesArray[i][:, 1] * \
+                    (2**8) + rawBytesArray[i][:, 0] * (2**16)
             normArray[i] = np.divide(reshapeArray[i], self.numAverages)
             # Conditional inversion for specific channel IDs
             if self.enabledChannelReceive[i] in inversionArray:
                 echoSignal[i] = np.subtract(normArray[i], 2048) * -1
             else:
                 echoSignal[i] = np.subtract(normArray[i], 2048)
+
         return echoSignal
 
     def _getArrayLegacy(self) -> np.ndarray[tuple[int, int], np.dtype[np.float64]]:
@@ -1255,6 +1261,7 @@ class Vitesse:
         indicesToDelete = np.arange(-1 * (additionalBytes + 1), -1)
         # Remove them from the main array
         array = np.delete(array, indicesToDelete)
+
         array = np.array(array, dtype=np.float16)
 
         channel = np.split(array, self.numChannelsOnReceive)
@@ -1284,6 +1291,7 @@ class Vitesse:
                 echoSignal[i] = np.subtract(normArray[i], 2048) * -1
             else:
                 echoSignal[i] = np.subtract(normArray[i], 2048)
+
         return echoSignal
 
     def setSleepTime(self, sleepTime: int) -> Self:
@@ -1298,7 +1306,7 @@ class Vitesse:
         """
         if not self.isSHM:
             return self
-        
+
         if sleepTime > 20000:
             raise ValueError('Maximum sleep time of 20000 exceeded.')
         elif sleepTime < 0:

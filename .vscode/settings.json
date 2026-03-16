@@ -83,5 +83,6 @@
     "bit": "cpp",
     "geometry": "cpp",
     "*.ipp": "cpp"
-  }
+  },
+  "python.analysis.typeCheckingMode": "off"
 }
