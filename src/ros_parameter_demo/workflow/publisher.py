@@ -38,7 +38,7 @@ class Publisher(Node):
         # Cycles Range: 1 to 3
         self.declare_parameter('numCycles', 2, descriptor=parameterDescriptor)
         # Record Length Range: 0 to 100 us (8 CH), 0 to 200 us (4 CH), 0 to 800 us (8 CH)
-        self.declare_parameter('recordLength', 50e-6,
+        self.declare_parameter('recordLength', 100e-6,
                                descriptor=parameterDescriptor)
         # PRF Range: 1 to 5000 Hz
         self.declare_parameter('PRF', 1000, descriptor=parameterDescriptor)
@@ -168,6 +168,10 @@ class Publisher(Node):
         msg.ascan_data = ascan_data_list
         ### GET YOUR TEMPERATURE HERE ###
         msg.temperature = 0.0
+        msg.num_cycles = self.get_parameter(
+            'numCycles').get_parameter_value().integer_value
+        msg.op_frequency = opFrequency = self.get_parameter(
+            'opFrequency').get_parameter_value().integer_value
         ### GET YOUR TEMPERATURE HERE ###
         self.publisher.publish(msg)
 

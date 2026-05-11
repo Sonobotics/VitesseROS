@@ -1,3 +1,5 @@
 float64 temperature
 int32[] active_channels
 string[] ascan_data
+int32 num_cycles
+int32 op_frequency
