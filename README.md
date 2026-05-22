@@ -119,6 +119,29 @@ The publisher does not include code on temperature gathering. You should impleme
 - `parameterDisplayNames`: Custom display names for parameters
 - `parameter_bounds`: Min/max bounds for numeric parameters
 
+### Calibration Functionality
+
+**Purpose**: The controller includes a calibration mode that temporarily changes the publisher's `numAverages` parameter to a predetermined number, collects averaged A-scan measurements, and then computes a corrected wave velocity.
+
+**How it is used**:
+
+- Place the EMAT connected to the first enumerated channel on top of your calibration block
+- Enter the calibration block's thickness in the controller GUI
+- Start calibration, which sets `numAverages` to 100 on the active publisher
+- Wait a fixed delay for the hardware to apply the averaging setting
+- Collect a series of averaged thickness measurements from the A-scan stream
+- Compute a calibrated speed of sound value based on the known thickness and measured average thickness
+- Apply the calibrated `wave_velocity` value to the processor channels
+
+**Calculation**:
+
+- The controller records the average measured thickness from the acquired A-scan data
+- It then computes the corrected speed of sound as:
+
+  `calibrated_speed = current_wave_velocity * (known_thickness / measured_average_thickness)`
+
+- This updated speed is applied to all processor channels so subsequent thickness calculations use the calibrated ultrasonic velocity.
+
 ## Channel Numbering
 
 The system uses 1-based channel numbering (1-8) for user-facing interfaces:

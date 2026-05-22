@@ -17,13 +17,15 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout
                              QWidget, QLabel, QSlider,
                              QLineEdit, QPushButton, QSpinBox, QDoubleSpinBox,
                              QCheckBox, QScrollArea,
-                             QProgressBar, QTabWidget)
+                             QProgressBar, QTabWidget, QDialog)
 from PyQt5.QtCore import Qt, pyqtSignal, QThread, QTimer
 from PyQt5.QtGui import QFont
 import concurrent.futures
 
 # service type used by the Actuate Forward/Backward buttons
 from std_srvs.srv import Trigger
+from interfaces.msg import Ascan  # type: ignore
+import numpy as np
 
 
 class ParameterDiscovery(QThread):
@@ -37,6 +39,7 @@ class ParameterDiscovery(QThread):
         self.last_nodes = set()
         self.service_clients = {}  # Cache service clients
         self.discovery_interval = 3.0  # Slower discovery when no nodes
+        self.wave_velocity =3260.0  # Default wave velocity in m/s, can be updated from config
 
     def run(self):
         """Main discovery loop in separate thread"""
@@ -673,6 +676,463 @@ class ParameterWidget(QWidget):
                 else:  # STRING_ARRAY
                     widget.setText(str(original_val))
 
+    def update_value(self, new_value):
+        """Refresh displayed GUI widget values from a new parameter value."""
+        if self.is_read_only:
+            return
+
+        self.original_value = new_value
+        self.current_value = new_value
+        self.has_been_modified = False
+
+        if self.param_type == ParameterType.PARAMETER_BOOL:
+            self.input_widgets[0].setChecked(bool(new_value))
+        elif self.param_type == ParameterType.PARAMETER_INTEGER:
+            self.input_widgets[0].setValue(int(new_value))
+            self.input_widgets[1].setValue(int(new_value))
+        elif self.param_type == ParameterType.PARAMETER_DOUBLE:
+            self.input_widgets[1].setValue(float(new_value))
+        elif self.param_type == ParameterType.PARAMETER_STRING:
+            self.input_widgets[0].setText(str(new_value))
+        elif self.param_type in [ParameterType.PARAMETER_INTEGER_ARRAY,
+                                 ParameterType.PARAMETER_DOUBLE_ARRAY,
+                                 ParameterType.PARAMETER_BOOL_ARRAY,
+                                 ParameterType.PARAMETER_STRING_ARRAY]:
+            for widget, item in zip(self.input_widgets, new_value):
+                if self.param_type == ParameterType.PARAMETER_INTEGER_ARRAY:
+                    widget.setValue(int(item))
+                elif self.param_type == ParameterType.PARAMETER_DOUBLE_ARRAY:
+                    widget.setValue(float(item))
+                elif self.param_type == ParameterType.PARAMETER_BOOL_ARRAY:
+                    widget.setChecked(bool(item))
+                else:
+                    widget.setText(str(item))
+
+
+class CalibrationDialog(QDialog):
+    """Dialog for collecting calibration measurements"""
+    
+    # Signal for thread-safe calibration completion
+    calibration_complete_signal = pyqtSignal()
+
+    def __init__(self, ros_node: Node, parent=None):
+        super().__init__(parent)
+        self.ros_node = ros_node
+        self.parent_gui = parent
+        
+        # Calibration state
+        self.thickness_measurements = []
+        self.calibration_complete = False
+        self.original_averages = None
+        self.calibration_channel = None
+        self.calibration_result = None
+        self.calibration_active = False
+        self.ascan_subscription = None
+        
+        # Dialog setup
+        self.setWindowTitle("Calibration")
+        self.setGeometry(200, 200, 400, 300)
+        self.setModal(True)
+        
+        self.init_ui()
+        
+        # Timer for timeout detection
+        self.timeout_timer = QTimer()
+        self.timeout_timer.setSingleShot(True)
+        self.timeout_timer.timeout.connect(self.on_measurement_timeout)
+        self.last_measurement_time = None
+        
+        # Connect calibration complete signal (thread-safe)
+        self.calibration_complete_signal.connect(self.on_calibration_complete)
+
+    def init_ui(self):
+        """Initialize calibration dialog UI"""
+        layout = QVBoxLayout()
+        
+        # Label
+        label = QLabel("Thickness of calibration block (mm):")
+        layout.addWidget(label)
+        
+        # Input field
+        self.thickness_input = QDoubleSpinBox()
+        self.thickness_input.setMinimum(0.0)
+        self.thickness_input.setMaximum(10000.0)
+        self.thickness_input.setDecimals(2)
+        self.thickness_input.setValue(0.0)
+        self.thickness_input.setSingleStep(0.1)
+        layout.addWidget(self.thickness_input)
+        
+        layout.addSpacing(10)
+        
+        # Start calibration button
+        self.start_btn = QPushButton("Start calibration")
+        self.start_btn.clicked.connect(self.on_start_calibration)
+        layout.addWidget(self.start_btn)
+        
+        # Progress bar
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setVisible(False)
+        layout.addWidget(self.progress_bar)
+        
+        # Progress counter
+        # self.counter_label = QLabel("Ready")
+        # self.counter_label.setVisible(False)
+        # layout.addWidget(self.counter_label)
+        
+        # Result label
+        self.result_label = QLabel("")
+        self.result_label.setStyleSheet("QLabel { color: green; font-weight: bold; }")
+        self.result_label.setVisible(False)
+        layout.addWidget(self.result_label)
+
+        self.apply_speed_btn = QPushButton("Apply Speed of Sound")
+        self.apply_speed_btn.clicked.connect(self.on_apply_speed_of_sound)
+        self.apply_speed_btn.setVisible(False)
+        self.apply_speed_btn.setEnabled(False)
+        layout.addWidget(self.apply_speed_btn)
+        
+        layout.addStretch()
+        
+        self.setLayout(layout)
+
+    def on_start_calibration(self):
+        """Start the calibration process"""
+        thickness_value = self.thickness_input.value()
+        
+        if thickness_value <= 0:
+            self.result_label.setText("Error: Thickness must be > 0")
+            self.result_label.setStyleSheet("QLabel { color: red; font-weight: bold; }")
+            self.result_label.setVisible(True)
+            return
+        
+        # Store the input thickness
+        self.calibration_thickness = thickness_value
+        self.calibration_channel = None
+        self.calibration_result = None
+        self.apply_speed_btn.setVisible(False)
+        self.apply_speed_btn.setEnabled(False)
+        
+        # Fetch the actual wave velocity being used by the publisher
+        self.wave_velocity = 3260.0
+        
+        # Reset measurements
+        self.thickness_measurements = []
+        self.calibration_complete = False
+        self.last_measurement_time = time.time()
+        
+        # Update UI
+        self.start_btn.setEnabled(False)
+        self.thickness_input.setEnabled(False)
+        self.progress_bar.setVisible(True)
+        # self.counter_label.setVisible(True)
+        self.progress_bar.setValue(0)
+        self.result_label.setVisible(False)
+        
+        # Set numAverages to 100 on the publisher
+        self.set_averages_to_100()
+        self.calibration_active = True
+        self.result_label.setText("Waiting for averages to apply...")
+        self.result_label.setStyleSheet("QLabel { color: blue; font-weight: bold; }")
+        self.result_label.setVisible(True)
+        QTimer.singleShot(4000, self.start_calibration_collection)
+        
+        # Start timeout timer (30 seconds)
+        self.timeout_timer.start(30000)
+        # self.counter_label.setText("Collecting measurements: 0/100")
+
+    def start_calibration_collection(self):
+        if not self.calibration_active:
+            return
+
+        self.result_label.setVisible(False)
+        self.thickness_measurements = []
+
+        if self.ascan_subscription is None:
+            self.ascan_subscription = self.ros_node.create_subscription(
+                Ascan,
+                'ascan',
+                self.on_ascan_received,
+                10
+            )
+
+    def set_averages_to_100(self):
+        """Set the numAverages parameter to 100"""
+        try:
+            # Create a client for SetParameters service
+            set_param_client = self.ros_node.create_client(
+                SetParameters, '/ascan_publisher/set_parameters'
+            )
+            
+            if not set_param_client.wait_for_service(timeout_sec=2):
+                self.result_label.setText("Error: Publisher service unavailable")
+                self.result_label.setStyleSheet("QLabel { color: red; font-weight: bold; }")
+                self.result_label.setVisible(True)
+                self.on_cancel_calibration()
+                return
+            
+            # Store original value first
+            get_param_client = self.ros_node.create_client(
+                GetParameters, '/ascan_publisher/get_parameters'
+            )
+            if get_param_client.wait_for_service(timeout_sec=2):
+                get_request = GetParameters.Request()
+                get_request.names = ['numAverages']
+                get_future = get_param_client.call_async(get_request)
+                while not get_future.done():
+                    time.sleep(0.01)
+                get_result = get_future.result()
+                if get_result and len(get_result.values) > 0:
+                    self.original_averages = get_result.values[0].integer_value
+            
+            # Set numAverages to 100
+            param_value = ParameterValue()
+            param_value.type = ParameterType.PARAMETER_INTEGER
+            param_value.integer_value = 100
+            
+            param_msg = ParameterMsg()
+            param_msg.name = 'numAverages'
+            param_msg.value = param_value
+            
+            set_request = SetParameters.Request()
+            set_request.parameters = [param_msg]
+            
+            set_future = set_param_client.call_async(set_request)
+            while not set_future.done():
+                time.sleep(0.01)
+            
+            set_result = set_future.result()
+            if not set_result or not set_result.results[0].successful:
+                self.result_label.setText("Error: Failed to set numAverages")
+                self.result_label.setStyleSheet("QLabel { color: red; font-weight: bold; }")
+                self.result_label.setVisible(True)
+                self.on_cancel_calibration()
+        
+        except Exception as e:
+            self.result_label.setText(f"Error setting averages: {str(e)}")
+            self.result_label.setStyleSheet("QLabel { color: red; font-weight: bold; }")
+            self.result_label.setVisible(True)
+            self.on_cancel_calibration()
+
+    def on_ascan_received(self, msg: Ascan):
+        """Handle incoming Ascan messages and extract thickness"""
+        try:
+            self.last_measurement_time = time.time()
+            
+            # Import the processing function to extract thickness
+            import sys
+            import pathlib
+            sys.path.append(str(pathlib.Path(__file__).parent.resolve()))
+            from AscanProcessingModule import singularThicknessCalculation
+            
+            # Process each active channel and collect thicknesses
+            if not msg.ascan_data or len(msg.active_channels) == 0:
+                return
+            
+            # For calibration, we'll use the first active channel
+            channel_idx = msg.active_channels[0] + 1
+            if self.calibration_channel is None:
+                self.calibration_channel = channel_idx
+            
+            if len(msg.ascan_data) > 0:
+                import base64
+                rawData = base64.b64decode(msg.ascan_data[0])
+                ascan = np.frombuffer(rawData, dtype=np.float64)
+                
+                # Get parameters from processor for this channel
+                # Use standard calibration parameters
+                sampling_freq = 50 * (10 ** 6)
+                lowbound_time = 4
+                minimum_thickness = 5.0
+                wave_velocity = self.wave_velocity
+                num_cycles = 2
+                signal_frequency = int(3.6 * (10 ** 6))
+                threshold_snr = 8.0
+                noise_width = 28
+                calibration_index = 42
+                
+                # Process ascan
+                try:
+                    _hilbAscan, _filtAscan, thickness_value, _peak_indices, _attenuation = singularThicknessCalculation(
+                        ascan,
+                        samplingFrequency=sampling_freq,
+                        lowboundTime=lowbound_time,
+                        minimumThickness=minimum_thickness,
+                        waveVelocity=wave_velocity,
+                        numCycles=num_cycles,
+                        signalFrequency=msg.op_frequency,
+                        thresholdSNR=threshold_snr,
+                        noiseWidth=noise_width,
+                        calibrationIndex=calibration_index,
+                        temperature=float(msg.temperature),
+                        firstPeak=False,
+                        multiEcho=False,
+                        zeroCrossing=False,
+                        temperatureCorrected=False
+                    )
+                    
+                    # Handle thickness_value which might be a single value or array
+                    if isinstance(thickness_value, (list, np.ndarray)) and len(thickness_value) > 0:
+                        thickness_value = float(thickness_value[0])
+                    else:
+                        thickness_value = float(thickness_value)
+                    
+                    # Only collect valid thicknesses
+                    if not np.isnan(thickness_value) and not np.isinf(thickness_value):
+                        self.thickness_measurements.append(thickness_value)
+                        self.progress_bar.setValue(len(self.thickness_measurements))
+                        # self.counter_label.setText(
+                        #     f"Collecting measurements: {len(self.thickness_measurements)}/100"
+                        # )
+                        
+                        # Check if calibration is complete
+                        if len(self.thickness_measurements) >= 100:
+                            self.calibration_complete_signal.emit()
+                
+                except Exception as e:
+                    pass  # Skip invalid measurements
+        
+        except Exception as e:
+            pass  # Continue measurement collection even if there are errors
+
+    def on_measurement_timeout(self):
+        """Handle measurement timeout"""
+        if len(self.thickness_measurements) < 100:
+            # self.result_label.setText(
+            #     f"Timeout: Only collected {len(self.thickness_measurements)}/100 measurements"
+            # )
+            # self.result_label.setStyleSheet("QLabel { color: orange; font-weight: bold; }")
+            # self.result_label.setVisible(True)
+            self.on_cancel_calibration()
+
+    def on_calibration_complete(self):
+        """Handle completion of calibration"""
+        self.timeout_timer.stop()
+        self.calibration_complete = True
+        
+        # Unsubscribe
+        if self.ascan_subscription:
+            self.ros_node.destroy_subscription(self.ascan_subscription)
+            self.ascan_subscription = None
+        
+        # Calculate new speed of sound based on average thickness and input thickness
+        if len(self.thickness_measurements) > 0:
+            avg_thickness = np.mean(self.thickness_measurements)
+            # Calculation: new_speed = old_speed * (calibration_thickness / avg_thickness)
+            calibration_result = self.wave_velocity * (self.calibration_thickness / avg_thickness)
+            self.calibration_result = calibration_result
+            
+            # Display result
+            self.result_label.setText(
+                f"Calibrated Speed of Sound: {calibration_result:.4f} m/s"
+            )
+            self.result_label.setStyleSheet("QLabel { color: green; font-weight: bold; }")
+            self.result_label.setVisible(True)
+            if hasattr(self, 'apply_speed_btn'):
+                self.apply_speed_btn.setVisible(True)
+                self.apply_speed_btn.setEnabled(True)
+            
+            # self.counter_label.setText(
+            #     f"Collected {len(self.thickness_measurements)} measurements\n"
+            #     f"Average: {avg_thickness:.4f} mm"
+            # )
+        
+        self.calibration_active = False
+
+        # Reset UI
+        self.start_btn.setEnabled(True)
+        self.thickness_input.setEnabled(True)
+
+    def on_apply_speed_of_sound(self):
+        """Apply calibrated speed of sound to all processor channels."""
+        if self.parent_gui is None or self.calibration_result is None:
+            return
+
+        changes = {
+            f'ch{channel}_wave_velocity': self.calibration_result
+            for channel in range(1, 9)
+        }
+
+        success = self.parent_gui.set_node_parameters(
+            'ascan_processor', changes)
+
+        if success:
+            for param_name, widget in self.parent_gui.parameter_widgets.get('ascan_processor', {}).items():
+                if param_name.endswith('_wave_velocity'):
+                    try:
+                        widget.update_value(self.calibration_result)
+                    except Exception:
+                        pass
+            self.restore_original_averages()
+            self.accept()
+        else:
+            self.result_label.setText(
+                "Failed to apply calibrated speed to processor"
+            )
+            self.result_label.setStyleSheet(
+                "QLabel { color: red; font-weight: bold; }"
+            )
+            self.result_label.setVisible(True)
+
+    def on_cancel_calibration(self):
+        """Cancel the calibration process"""
+        self.timeout_timer.stop()
+        
+        # Unsubscribe
+        if self.ascan_subscription:
+            self.ros_node.destroy_subscription(self.ascan_subscription)
+            self.ascan_subscription = None
+        
+        # Restore original numAverages value
+        self.restore_original_averages()
+        
+        if hasattr(self, 'apply_speed_btn'):
+            self.apply_speed_btn.setVisible(False)
+            self.apply_speed_btn.setEnabled(False)
+        self.calibration_channel = None
+        self.calibration_result = None
+        self.calibration_active = False
+        
+        # Reset UI
+        self.start_btn.setEnabled(True)
+        self.thickness_input.setEnabled(True)
+        self.progress_bar.setVisible(False)
+        # self.counter_label.setVisible(False)
+        
+        self.thickness_measurements = []
+
+    def restore_original_averages(self):
+        """Restore the original numAverages value"""
+        if self.original_averages is not None:
+            try:
+                set_param_client = self.ros_node.create_client(
+                    SetParameters, '/ascan_publisher/set_parameters'
+                )
+                
+                if set_param_client.wait_for_service(timeout_sec=1):
+                    param_value = ParameterValue()
+                    param_value.type = ParameterType.PARAMETER_INTEGER
+                    param_value.integer_value = self.original_averages
+                    
+                    param_msg = ParameterMsg()
+                    param_msg.name = 'numAverages'
+                    param_msg.value = param_value
+                    
+                    set_request = SetParameters.Request()
+                    set_request.parameters = [param_msg]
+                    
+                    set_future = set_param_client.call_async(set_request)
+                    while not set_future.done():
+                        time.sleep(0.01)
+            except Exception:
+                pass  # Best effort to restore
+
+    def closeEvent(self, event):
+        """Handle dialog close"""
+        self.on_cancel_calibration()
+        event.accept()
+
 
 class ParameterManagerGUI(QMainWindow):
 
@@ -797,6 +1257,11 @@ class ParameterManagerGUI(QMainWindow):
         self.backward_btn.clicked.connect(self.actuate_backward_pressed)
         button_layout.addWidget(self.backward_btn)
 
+        # Calibrate button
+        self.calibrate_btn = QPushButton("Calibrate")
+        self.calibrate_btn.clicked.connect(self.on_calibrate_pressed)
+        button_layout.addWidget(self.calibrate_btn)
+
         button_layout.addStretch()
 
         self.status_label = QLabel("Discovering nodes...")
@@ -867,6 +1332,11 @@ class ParameterManagerGUI(QMainWindow):
 
     def actuate_backward_pressed(self):
         self._call_actuation_service(self.backward_client, 'Actuate Backward')
+
+    def on_calibrate_pressed(self):
+        """Open calibration dialog"""
+        calibration_dialog = CalibrationDialog(self.ros_node, parent=self)
+        calibration_dialog.exec_()
 
     def update_node_parameters(self, node_params: Dict[str, Dict]):
         """Update GUI with discovered node parameters"""
